@@ -258,7 +258,14 @@ class LayeredMemory:
             if query and not any(str(query) in str(m.get('content','')) for m in hot):
                 hot.insert(0,objective)
         finally:
-            future.cancel()
+            # A running retrieval still owns a SQLite connection. Join it before
+            # returning an early budget/cancellation error so the caller can
+            # safely close or remove its session store on Windows.
+            if not future.cancel():
+                try:
+                    future.result(timeout=15)
+                except Exception:
+                    pass
         recalled=''
         used=[]
         for source in sources:

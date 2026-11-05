@@ -9,8 +9,8 @@ Created by **Rithvikyada**.
 **[Visit the official website and download Syntra Slash](https://syntraslash.pages.dev/#get-syntra)**
 
 - [Official website](https://syntraslash.pages.dev/)
-- [Windows installer — Syntra-Slash-Setup.exe](https://github.com/yadarithvik/syntraslash-releases/releases/download/v1.2.0/Syntra-Slash-Setup.exe)
-- [Release notes and checksums](https://github.com/yadarithvik/syntraslash-releases/releases/tag/v1.2.0)
+- [Windows installer — Syntra-Slash-Setup.exe](https://github.com/yadarithvik/syntraslash-releases/releases/download/v1.3.0/Syntra-Slash-Setup.exe)
+- [Release notes and checksums](https://github.com/yadarithvik/syntraslash-releases/releases/tag/v1.3.0)
 
 This repository contains the website deployed to Cloudflare Pages, the Windows app source, and developer documentation. The existing Windows download remains available through GitHub Releases.
 
@@ -34,7 +34,7 @@ The website contains an illustrative interactive preview. AI inference and deskt
 ## Install on Windows
 
 1. Open [the official download page](https://syntraslash.pages.dev/#get-syntra).
-2. Download and run **Syntra-Slash-Setup.exe** (about 80 MB).
+2. Download and run **Syntra-Slash-Setup.exe** (includes skills and REA MCP).
 3. Launch Syntra Slash and choose **Download & install model**. The model download is approximately **8.99 GB**.
 4. Wait for checksum verification, then choose **Open Syntra**.
 
@@ -114,3 +114,8 @@ See [source provenance](docs/SOURCE-PROVENANCE.md) for the relationship between 
 ## Syntra 1.2.0
 
 See [release notes](docs/RELEASE-v1.2.0.md), [verification](docs/VERIFICATION-v1.2.0.md), and [implemented memory behavior](desktop-app/MEMORY_IMPLEMENTATION.md). Recall currently uses FTS5 keyword search, and dossiers select source facts. Model input remains bounded; stored history and active context are separate.
+
+
+## Syntra 1.3.0
+
+Includes twelve default skills, local Codex/Antigravity skill imports, local plugin bundles and an MCP manager with bundled REA. See [release notes](docs/RELEASE-v1.3.0.md) and [skills/MCP behavior](docs/SKILLS-AND-MCP.md). The model remains a separate in-app download.

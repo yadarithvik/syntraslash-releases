@@ -938,8 +938,82 @@ def recall_memory(args, context):
             'sources': sources, 'matches': len(sources), 'scope': 'current_session'}
 
 
+def _require_reader(name):
+    import extensions
+    if not any(x['name']==name and x['enabled'] for x in extensions.list_skills()['skills']):
+        raise ValueError('Enable '+name+' in Skills & plugins first.')
+
+
+def read_document(args, context):
+    import document_readers
+    suffix=Path(args['path']).suffix.lower()
+    _require_reader({'.pdf':'pdf-reader','.docx':'document-reader','.csv':'table-reader','.json':'table-reader'}.get(suffix,'text-reader'))
+    return document_readers.read_document(args['path'],args.get('page_start',1),args.get('page_count',3))
+
+
+def read_image(args, context):
+    import document_readers
+    _require_reader('image-reader')
+    return document_readers.read_image(args['path'],context.get('cancel_event'))
+
+
+def list_skills(args, context):
+    import extensions
+    items=[{k:x[k] for k in ('id','name','description','enabled','compatibility')} for x in extensions.list_skills()['skills']]
+    return {'success':True,'skills':items[:100],'output':json.dumps(items[:100],ensure_ascii=False)}
+
+
+def read_skill(args, context):
+    import extensions
+    return extensions.read_skill(str(args['id']))
+
+
+def manage_extensions(args, context):
+    import extensions
+    action=args['action']
+    if action=='discover':
+        items=extensions.list_skills(context.get('workspace'),True)
+        return {'success':True,'output':json.dumps(items,ensure_ascii=False)[:16000]}
+    if action=='install':result=extensions.install_skill(str(args['id']),context.get('workspace'))
+    elif action=='enable':
+        if not isinstance(args.get('enabled'),bool):raise ValueError('enabled must be boolean.')
+        result=extensions.enable_skill(str(args['id']),args['enabled'])
+    elif action=='plugin':result=extensions.import_plugin(str(args['path']))
+    else:raise ValueError('Unknown extension action.')
+    return {'success':True,'output':json.dumps(result,ensure_ascii=False)}
+
+
+def mcp_list_tools(args, context):
+    import mcp_client
+    return mcp_client.list_tools(args.get('server','rea'),args.get('query',''),args.get('tool_name'))
+
+
+def mcp_call_tool(args, context):
+    import mcp_client
+    return mcp_client.call_tool(args.get('server','rea'),args['tool'],args.get('arguments',{}),context.get('cancel_event'))
+
+
+def schedule_task(args, context):
+    import local_schedule
+    return local_schedule.schedule(args['name'],args['prompt'],args['run_at'],context['workspace'])
+
+
+def list_scheduled_tasks(args, context):
+    import local_schedule
+    return {'success':True,'output':json.dumps(local_schedule.list_tasks(),ensure_ascii=False)}
+
+
+def cancel_scheduled_task(args, context):
+    import local_schedule
+    return local_schedule.cancel(args['id'])
+
+
 # Tool Dispatch Table
 REGISTRY = {
+    'manage_extensions':manage_extensions,'mcp_list_tools':mcp_list_tools,'mcp_call_tool':mcp_call_tool,
+    'schedule_task':schedule_task,'list_scheduled_tasks':list_scheduled_tasks,'cancel_scheduled_task':cancel_scheduled_task,
+    'read_document':read_document, 'read_image':read_image,
+    'list_skills':list_skills, 'read_skill':read_skill,
     'recall_memory': recall_memory,
     'inspect_environment': inspect_environment,
     'find_folder': find_folder,

@@ -4,3 +4,5 @@ Pillow
 pywin32; sys_platform == "win32"
 comtypes; sys_platform == "win32"
 PyInstaller
+
+pypdf>=6,<7

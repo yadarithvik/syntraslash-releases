@@ -409,6 +409,24 @@ def get_tool_definitions(mode='background'):
         'parameters': {'type': 'object', 'properties': {
             'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 8}},
             'required': ['query']}}})
+    definitions = [
+        ('read_document','Extract bounded text from local PDF, DOCX, CSV, JSON and text files. PDF pages use 1-based references.',{'path':{'type':'string'},'page_start':{'type':'integer','minimum':1},'page_count':{'type':'integer','minimum':1,'maximum':5}},['path']),
+        ('read_image','Read image dimensions and text through local Windows OCR. Does not provide full visual understanding.',{'path':{'type':'string'}},['path']),
+        ('list_skills','List installed skill instructions and enablement status.',{},[]),
+        ('read_skill','Load an enabled installed skill by its catalog ID before following its workflow.',{'id':{'type':'string'}},['id'])
+    ]
+    for name,description,properties,required in definitions:
+        tools.append({'type':'function','function':{'name':name,'description':description,'parameters':{'type':'object','properties':properties,'required':required}}})
+    extra = [
+        ('manage_extensions','Manage Syntra skill instructions and local plugin bundles when requested.',{'action':{'type':'string','enum':['discover','install','enable','plugin']},'id':{'type':'string'},'enabled':{'type':'boolean'},'path':{'type':'string'}},['action']),
+        ('mcp_list_tools','Discover a connected local MCP server. Use tool_name to retrieve the complete schema for one tool. The bundled rea server provides reverse engineering tools.',{'server':{'type':'string'},'query':{'type':'string'},'tool_name':{'type':'string'}},[]),
+        ('mcp_call_tool','Call an actual advertised MCP tool after discovering its schema. Large complete responses are saved to full_result_path.',{'server':{'type':'string'},'tool':{'type':'string'},'arguments':{'type':'object'}},['tool','arguments']),
+        ('schedule_task','Schedule a one-shot local task in the current workspace. Syntra must be running; include a UTC offset in run_at.',{'name':{'type':'string'},'prompt':{'type':'string'},'run_at':{'type':'string','description':'Future ISO-8601 datetime with UTC offset, e.g. 2026-11-08T09:00:00+05:30'}},['name','prompt','run_at']),
+        ('list_scheduled_tasks','List local scheduled tasks and their state.',{},[]),
+        ('cancel_scheduled_task','Cancel a pending local scheduled task when requested.',{'id':{'type':'string'}},['id'])
+    ]
+    for name,description,properties,required in extra:
+        tools.append({'type':'function','function':{'name':name,'description':description,'parameters':{'type':'object','properties':properties,'required':required}}})
     return tools
 
 

@@ -64,3 +64,8 @@ Personal models, conversation files, databases, and existing build output were p
 ## Layered local memory build
 
 This folder now includes the integrated disk-backed memory implementation. See [MEMORY_IMPLEMENTATION.md](MEMORY_IMPLEMENTATION.md) for behavior, verification, and limits.
+
+
+## Syntra 1.3.0 skills build
+
+See [SKILLS_AND_MCP.md](SKILLS_AND_MCP.md) for the twelve default skills, REA MCP, supported local imports, reader boundaries and release schedule.

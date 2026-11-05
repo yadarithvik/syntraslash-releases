@@ -87,7 +87,7 @@ Protocol:
 3. When asked to write and run code, use write_file followed by run_python or run_powershell.
 4. Inspect real tool outputs and stderr. If an error occurs, analyze the error, edit the file to fix it, and verify again.
 5. To execute actions, call tools natively. Do NOT write raw JSON blocks or pseudo tool-call snippets in your response text.
-6. When results are verified, conclude by calling complete_task with your summary, and state the verified values, totals, and file paths clearly in your response prose.'''
+6. When results are verified, call complete_task alone in a later response after reading the actual tool results. Never batch completion with tools whose results you have not observed. Include the requested verified values, totals, and file paths in its summary.'''
 
         if mode == 'transparent':
             system_instruction += """
@@ -111,6 +111,8 @@ If a tool fails, correct that same operation and retry successfully. Inspection 
 A batch stops on the first failure; later actions are skipped. Never claim skipped actions succeeded.
 """
 
+        import extensions
+        system_instruction += '\n\n' + extensions.prompt_catalog()
         messages.append({'role': 'system', 'content': system_instruction})
 
         # Append prior turns
@@ -240,8 +242,11 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
                             })
 
                             # Execute with full isolation and context
+                            deferred_complete = tool_name == 'complete_task' and len(tool_calls) > 1
                             try:
-                                if batch_failed:
+                                if deferred_complete:
+                                    result = {'success': False, 'output': 'Completion deferred: the other tool results in this batch were not available when this summary was generated. Read the observed results now, then call complete_task ALONE in a later response with the actual requested values.'}
+                                elif batch_failed:
                                     result = {'success': False, 'output': 'Skipped because an earlier tool in this batch failed. Re-observe and issue corrected native tool calls.'}
                                 else:
                                     result = tools_registry.execute_tool(tool_name, tool_args, context)
@@ -249,7 +254,7 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
                                 result = {'success': False, 'output': f'{type(error).__name__}: {error}'}
 
 
-                            if result.get('success') is False:
+                            if result.get('success') is False and not deferred_complete:
                                 batch_failed = True
 
                             # Resolve paths

@@ -1,0 +1,3 @@
+# Recreate the private MCP runtime
+
+The installer includes this runtime. Source archives exclude the generated Node executable and node_modules. Use a compatible Node 24.22.1 installation and the source archive’s desktop-app/mcp/rea/package-lock.json. From desktop-app, create mcp/node, copy the compatible node.exe into mcp/node/node.exe with its LICENSE, and run `npm ci --prefix mcp/rea --omit=dev --ignore-scripts --no-audit --no-fund`. The preset launches `mcp/node/node.exe mcp/rea/node_modules/rea-agents/scripts/rea.mjs mcp`. Keep dependency licenses. Some native providers need separate engines; they are not silently installed by this build.

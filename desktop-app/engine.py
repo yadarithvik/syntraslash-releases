@@ -75,6 +75,18 @@ class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
         route = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
+        if route == '/api/mcp':
+            import mcp_client
+            return self.json_response(mcp_client.status())
+
+        if route == '/api/scheduled-tasks':
+            import local_schedule
+            return self.json_response({'tasks':local_schedule.list_tasks()})
+
+        if route == '/api/extensions':
+            import extensions
+            return self.json_response(extensions.list_skills(query.get('workspace',[None])[0],query.get('discover',['0'])[0]=='1'))
+
         # 1. System Health & Environment Diagnostics
         if route == '/api/health':
             engine_status = 'offline'
@@ -99,7 +111,7 @@ class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
                 'model_queue': queue_status,
                 'workspace': str(BASE_DIR),
                 'context_limit': 16384,
-                'version': '1.2.0-memory-preview',
+                'version': '1.3.0',
                 'memory': {'persistent':True,'retrieval':'SQLite FTS5',
                            'hot_tokens':2048,'recall_tokens':2048,'dossier':'extractive'}
             })
@@ -272,11 +284,74 @@ class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         route = parsed.path
 
+        if route.startswith(('/api/extensions/','/api/mcp/')) or route == '/api/documents/attachment':
+            origin = self.headers.get('Origin','')
+            if origin and urllib.parse.urlparse(origin).netloc != self.headers.get('Host',''):
+                return self.json_response({'error':'Same-origin request required.'},403)
+            maximum = 23*1024*1024 if route == '/api/documents/attachment' else 65536
+            try:
+                content_length = int(self.headers.get('Content-Length',0))
+            except ValueError:
+                return self.json_response({'error':'Invalid content length.'},400)
+            if content_length < 0 or content_length > maximum:
+                return self.json_response({'error':'Request too large.'},413)
+
         try:
             length = int(self.headers.get('Content-Length', 0))
             payload = json.loads(self.rfile.read(length) or b'{}') if length > 0 else {}
         except Exception:
             return self.json_response({'error': 'Invalid JSON body.'}, 400)
+
+        if route.startswith('/api/mcp/'):
+            import mcp_client
+            try:
+                if route=='/api/mcp/connect':
+                    client=mcp_client.connect(str(payload['name']))
+                    result={'name':payload['name'],'server_info':client.server_info,'tool_count':len(client.tools)}
+                elif route=='/api/mcp/disconnect':
+                    mcp_client.disconnect(str(payload['name']));result={'disconnected':True}
+                elif route=='/api/mcp/save':
+                    if not isinstance(payload.get('enabled',True),bool):raise ValueError('enabled must be boolean.')
+                    result=mcp_client.save_server(str(payload['name']),payload['command'],payload.get('args',[]),payload.get('enabled',True))
+                else:return self.json_response({'error':'Unknown MCP action.'},404)
+                return self.json_response({'success':True,'result':result})
+            except Exception as error:return self.json_response({'error':str(error)},400)
+
+        if route.startswith('/api/extensions/'):
+            import extensions
+            try:
+                if route == '/api/extensions/install':
+                    result=extensions.install_skill(str(payload['id']),payload.get('workspace'))
+                elif route == '/api/extensions/enable':
+                    if not isinstance(payload.get('enabled'),bool):raise ValueError('enabled must be true or false.')
+                    result=extensions.enable_skill(str(payload['id']),payload['enabled'])
+                elif route == '/api/extensions/plugin':
+                    result=extensions.import_plugin(str(payload['path']))
+                else:return self.json_response({'error':'Unknown extension action.'},404)
+                return self.json_response({'success':True,'result':result})
+            except (OSError,ValueError,KeyError) as error:
+                return self.json_response({'error':str(error)},400)
+
+        if route == '/api/documents/attachment':
+            import base64
+            import document_readers
+            import tempfile
+            try:
+                name=Path(str(payload.get('name','file.txt'))).name
+                suffix=Path(name).suffix.lower()
+                if suffix not in ('.pdf','.docx','.csv','.json','.txt','.md','.png','.jpg','.jpeg','.webp','.bmp','.tiff'):
+                    raise ValueError('Unsupported attachment type.')
+                raw=base64.b64decode(payload['data'],validate=True)
+                if len(raw)>document_readers.MAX_BYTES:raise ValueError('Attachment exceeds 16 MB.')
+                with tempfile.TemporaryDirectory(prefix='syntra-attachment-') as folder:
+                    target=Path(folder)/('attached'+suffix);target.write_bytes(raw)
+                    if suffix in ('.png','.jpg','.jpeg','.webp','.bmp','.tiff'):
+                        tools_registry = __import__('tools_registry');tools_registry._require_reader('image-reader')
+                        result=document_readers.read_image(target)
+                    else:
+                        result=__import__('tools_registry').read_document({'path':str(target),'page_count':2},{})
+                return self.json_response({'name':name,'content':str(result.get('output',''))[:6000],'method':result['method'],'warning':result.get('warning'),'excerpt':True})
+            except Exception as error:return self.json_response({'error':str(error)},400)
 
         # User approval / denial endpoint for security gates
         if route == '/api/session/approve':
@@ -391,3 +466,7 @@ def serve(port=8080):
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     serve(port)
+
+
+import local_schedule
+local_schedule.start()

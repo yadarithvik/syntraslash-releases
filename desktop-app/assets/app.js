@@ -428,6 +428,12 @@ function connectSessionStream(session_id) {
       updateRunningControls();
       renderContinuationCard();
     } else if (eventType === 'done' || eventType === 'interrupted' || eventType === 'error') {
+      if (eventType === 'done' && typeof data.content === 'string' && lastArticle?.classList.contains('assistant')) {
+        const body = lastArticle.querySelector('.message-body');
+        body.dataset.raw = data.content;
+        body.innerHTML = renderMarkdown(data.content);
+        ensureSafeLinks(body);
+      }
       setActivityState(lastArticle, eventType === 'done' ? 'complete' : eventType);
       const pending = lastArticle?.querySelector('.pending-text');
       if (pending) pending.remove();
@@ -795,7 +801,10 @@ function activityPresentation(tool, args, result, isStart, path) {
   let category = 'desktop', glyph = 'activity', title = '';
   const verb = (present, past) => isStart ? present : past;
   const file = value => `<span class="activity-filename">${escapeHTML(shortPath(value))}</span>`;
-  if (tool === 'write_file') {
+  if (tool === 'read_document' || tool === 'read_image' || tool === 'read_skill' || tool === 'list_skills') {
+    category = 'read'; glyph = 'file';
+    title = `${verb('Reading','Read')} ${escapeHTML(path ? shortPath(path) : tool === 'read_skill' ? result.name || 'skill instructions' : 'installed skills')}`;
+  } else if (tool === 'write_file') {
     category = 'write'; glyph = 'edit';
     const diff = String(result.diff || '');
     const lines = diff.split('\n');
@@ -925,7 +934,12 @@ function appendActivity(article, event) {
   let pills = [];
   let detailsHtml = '';
 
-  if (tool === 'local_memory') {
+  if (['read_document','read_image','read_skill','list_skills'].includes(tool)) {
+    category = 'read';
+    title = `${isStart ? 'Reading' : 'Read'} ${escapeHTML(effectivePath || tool.replaceAll('_',' '))}`;
+    const result = event.result || {};
+    detailsHtml = `<pre class="activity-pre">${escapeHTML(isStart ? JSON.stringify(effectiveArgs,null,2) : result.output || JSON.stringify(result,null,2))}</pre>${result.warning ? `<p>${escapeHTML(result.warning)}</p>` : ''}`;
+  } else if (tool === 'local_memory') {
     category = 'search';
     const memory = event.result || {};
     title = memory.dossier ? 'Saved local memory dossier' : `Recalled ${(memory.recalled_layer_ids || []).length} local memory layer(s)`;
@@ -1323,6 +1337,61 @@ function openDialog(title, html) {
   if (!$('dialog').open) $('dialog').showModal();
 }
 
+let extensionsData = {skills:[],plugins:[]};
+let mcpData = {servers:[]};
+let extensionsDiscover = false;
+let extensionsFilter = '';
+
+async function extensionsRequest(path,payload) {
+  const response = await fetch(path,payload ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)} : {});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Extension request failed.');
+  return data;
+}
+
+async function showExtensions(discover=false) {
+  extensionsDiscover = discover || extensionsDiscover;
+  openDialog('Skills, plugins & MCP', `<p class="dialog-copy">Loading local skills…</p>`);
+  $('dialog').classList.add('extensions-modal');
+  try {
+    [extensionsData,mcpData] = await Promise.all([extensionsRequest(`/api/extensions?discover=${extensionsDiscover?1:0}&workspace=${encodeURIComponent(state.workspace || '')}`),extensionsRequest('/api/mcp')]);
+    renderExtensions();
+  } catch(error) { $('dialogBody').textContent=error.message; }
+}
+
+function renderExtensions() {
+  const items=extensionsData.skills.filter(item => `${item.name} ${item.provider} ${item.description}`.toLowerCase().includes(extensionsFilter.toLowerCase()));
+  $('dialogBody').innerHTML=`<p class="dialog-copy">Built-in skills are ready to use. Import local skill instructions from Codex and Antigravity, then enable the ones you want.</p>
+    <div class="extensions-toolbar"><input class="dialog-input" id="skillSearch" type="search" placeholder="Search skills or provider" aria-label="Search skills" value="${escapeHTML(extensionsFilter)}"><button class="secondary-button" id="scanSkills">Scan Codex & Antigravity</button><button class="secondary-button" id="importAllSkills">Import all found</button></div>
+    <p class="extensions-note">Imported skills start disabled. Their original apps’ connectors, logins, hooks and model capabilities are not transferred. Review dependencies before enabling.</p>
+    <div class="skill-list">${items.map(item=>`<article class="skill-card"><div><strong>${escapeHTML(item.name)}</strong><span class="skill-provider">${escapeHTML(item.provider)}${item.builtin?' · Included':''}</span><p>${escapeHTML(item.description)}</p><small>${escapeHTML(item.compatibility)}</small></div>${item.installed?`<label class="skill-switch"><input type="checkbox" data-skill-enable="${escapeHTML(item.id)}" ${item.enabled?'checked':''}><span>Enabled</span></label>`:`<button class="secondary-button" data-skill-install="${escapeHTML(item.id)}">Import</button>`}</article>`).join('') || '<p class="dialog-copy">No matching skills.</p>'}</div>
+    <h3 class="plugin-heading">MCP servers</h3><p class="extensions-note">REA 6.8.0 and a private Node runtime are included. Connect to discover tools. Deep native analysis may need separate engines.</p><div class="mcp-servers">${mcpData.servers.map(server=>`<div class="mcp-server"><div><strong>${escapeHTML(server.name)}</strong><small>${server.connected?`${server.tool_count} tools connected`:server.installed?'Installed · ready to connect':'Runtime missing'}${server.package?` · ${escapeHTML(server.package)}`:''}</small></div><button class="secondary-button" data-mcp-name="${escapeHTML(server.name)}" data-mcp-action="${server.connected?'disconnect':'connect'}">${server.connected?'Disconnect':'Connect'}</button></div>`).join('')}</div>
+    <details class="mcp-config"><summary>Add a local MCP server</summary><div class="extensions-toolbar"><input class="dialog-input" id="mcpName" placeholder="Server name" aria-label="MCP server name"><input class="dialog-input" id="mcpCommand" placeholder="C:\\path\\server.exe" aria-label="MCP executable"></div><input class="dialog-input" id="mcpArgs" placeholder='["argument"]' aria-label="MCP arguments as JSON"><button class="secondary-button" id="saveMcp">Save local server</button></details>
+    <h3 class="plugin-heading">Local plugin bundles</h3><p class="extensions-note">Plugin bundles group local skills. Import a folder containing plugin.json and its skill folders. Scripts do not execute during installation.</p>
+    <div class="plugin-list">${extensionsData.plugins.map(plugin=>`<div class="plugin-row"><strong>${escapeHTML(plugin.name)}</strong><span>${plugin.skills.length} skills · ${plugin.builtin?'Included':'Imported'}</span></div>`).join('')}</div>
+    <div class="extensions-toolbar"><input class="dialog-input" id="pluginPath" placeholder="C:\\MyPlugins\\my-plugin" aria-label="Local plugin folder"><button class="secondary-button" id="importPlugin">Import plugin folder</button></div><p class="extensions-note" id="extensionStatus" role="status"></p>`;
+  $('skillSearch').oninput=e=>{const start=e.target.selectionStart;extensionsFilter=e.target.value;renderExtensions();$('skillSearch').focus();$('skillSearch').setSelectionRange(start,start);};
+  $('scanSkills').onclick=()=>showExtensions(true);
+  document.querySelectorAll('[data-mcp-name]').forEach(button=>button.onclick=()=>extensionAction(button,'/api/mcp/'+button.dataset.mcpAction,{name:button.dataset.mcpName}));
+  $('saveMcp').onclick=()=>{try{const args=JSON.parse($('mcpArgs').value || '[]');extensionAction($('saveMcp'),'/api/mcp/save',{name:$('mcpName').value,command:$('mcpCommand').value,args,enabled:true});}catch(error){$('extensionStatus').textContent='Arguments must be a JSON array.';}};
+  document.querySelectorAll('[data-skill-install]').forEach(button=>button.onclick=()=>extensionAction(button,'/api/extensions/install',{id:button.dataset.skillInstall,workspace:state.workspace}));
+  document.querySelectorAll('[data-skill-enable]').forEach(input=>input.onchange=()=>extensionAction(input,'/api/extensions/enable',{id:input.dataset.skillEnable,enabled:input.checked}));
+  $('importPlugin').onclick=()=>extensionAction($('importPlugin'),'/api/extensions/plugin',{path:$('pluginPath').value});
+  $('importAllSkills').onclick=async()=>{
+    const button=$('importAllSkills');button.disabled=true;
+    const candidates=extensionsData.skills.filter(item=>!item.installed);let imported=0;let failures=[];
+    for(const item of candidates){try{await extensionsRequest('/api/extensions/install',{id:item.id,workspace:state.workspace});imported++;}catch(error){failures.push(`${item.name}: ${error.message}`);}}
+    await showExtensions(extensionsDiscover);
+    $('extensionStatus').textContent=`Imported ${imported} skills, disabled for review.${failures.length?' '+failures.length+' could not be imported: '+failures.join('; '):''}`;
+  };
+}
+
+async function extensionAction(button,path,payload){
+  button.disabled=true;
+  try{await extensionsRequest(path,payload);await showExtensions(extensionsDiscover);}
+  catch(error){button.disabled=false;$('extensionStatus').textContent=error.message;}
+}
+
 async function showStringDetails() {
   const sessionId = state.current;
   const memory = state.memoryBySession[sessionId] || (state.activeSessionData?.events || []).filter(event => event.type === 'memory' && Array.isArray(event.payload?.recalled_layer_ids)).at(-1)?.payload;
@@ -1496,6 +1565,8 @@ async function checkHealth() {
 // Event Listeners Initialization
 // -------------------------------------------------------------
 
+$('extensionsButton').onclick = () => showExtensions();
+$('dialog').addEventListener('close',()=>$('dialog').classList.remove('extensions-modal'));
 $('newSession').onclick = newSession;
 $('stopAllBtn').onclick = stopAll;
 $('brandHome').onclick = e => { e.preventDefault(); newSession(); };
@@ -1532,6 +1603,17 @@ $('attachButton').onclick = () => $('fileInput').click();
 $('fileInput').onchange = async e => {
   for (const file of e.target.files) {
     if (state.files.length >= 5) { toast('Attach up to 5 files.'); break; }
+    const binaryReader=/\.(pdf|docx|png|jpe?g|webp|bmp|tiff)$/i.test(file.name);
+    if(binaryReader){
+      if(file.size>16*1024*1024){toast(`${file.name} exceeds 16 MB.`);continue;}
+      try{
+        const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});
+        const result=await extensionsRequest('/api/documents/attachment',{name:file.name,data});
+        state.files.push({name:file.name,content:`[Local reader: ${result.method}; bounded excerpt]\n${result.warning || ''}\n${result.content}`});
+        if(result.warning)toast(result.warning);
+      }catch(error){toast(`${file.name}: ${error.message}`);}
+      continue;
+    }
     if (file.size > 150000) { toast(`${file.name} is too large (>150 KB).`); continue; }
     const text = await file.text();
     if (text.includes('\0')) { toast(`${file.name} is not a text file.`); continue; }
