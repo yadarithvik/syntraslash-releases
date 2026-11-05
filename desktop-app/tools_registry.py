@@ -926,8 +926,21 @@ def register_artifact(args, context):
     }
 
 
+def recall_memory(args, context):
+    from memory_engine import LayeredMemory
+    import session_store
+    memory = context.get('memory_engine') or LayeredMemory(session_store.MEMORY_DIR, context['session_id'])
+    query = str(args.get('query','')).strip()
+    if not query:
+        return {'success': False, 'output': 'Specific memory search keywords are required.'}
+    sources = memory.search(query, min(int(args.get('limit',6)),8), context.get('cancel_event'))
+    return {'success': True, 'output': json.dumps(sources,ensure_ascii=False),
+            'sources': sources, 'matches': len(sources), 'scope': 'current_session'}
+
+
 # Tool Dispatch Table
 REGISTRY = {
+    'recall_memory': recall_memory,
     'inspect_environment': inspect_environment,
     'find_folder': find_folder,
     'open_path': open_path,

@@ -14,6 +14,7 @@ const state = {
   workspace: '',
   health: null,
   eventSources: {},       // session_id -> EventSource
+  memoryBySession: {},
   lastEventIds: {},       // session_id -> int
   runningSessionIds: new Set(),
   openTabs: [],           // array of {path, canonical_path, name, language, status, content, total_lines, diff}
@@ -128,10 +129,12 @@ function scrollChat(force = false) {
 }
 
 function updateContext() {
-  const msgs = state.activeSessionData?.messages || [];
-  const chars = msgs.reduce((n, m) => n + (m.content || '').length + (m.files || []).reduce((t, f) => t + (f.content || '').length, 0), 0);
-  const estimate = Math.ceil(chars / 4);
-  $('contextCount').textContent = estimate ? `~${estimate.toLocaleString()} / 16k tokens` : '16k context';
+  const previous = (state.activeSessionData?.events || []).filter(event => event.type === 'memory' && Array.isArray(event.payload?.recalled_layer_ids)).at(-1)?.payload;
+  const memory = state.memoryBySession[state.current] || previous;
+  const ids = [...new Set(memory?.recalled_layer_ids || [])];
+  const label = ids.length ? `Recalled ${ids.length === 1 ? 'string' : 'strings'} ${ids.slice(0, 2).join(', ')}${ids.length > 2 ? ` +${ids.length - 2}` : ''}` : 'Local strings';
+  $('stringsIndicator').querySelector('span').textContent = label;
+  $('stringsIndicator').title = ids.length ? `Latest recall used local strings ${ids.join(', ')}. View memory details.` : 'Conversation strings are stored locally. View memory details.';
 }
 
 function renderFiles() {
@@ -199,6 +202,7 @@ function renderSessions() {
 
   const filtered = state.sessions.filter(s => (s.title || '').toLowerCase().includes(search));
   $('sessionCount').textContent = state.sessions.length;
+  $('stopAllBtn').disabled = state.runningSessionIds.size === 0;
 
   if (!filtered.length) {
     const p = document.createElement('p');
@@ -267,7 +271,7 @@ async function selectSession(id) {
     // Replay session activity events into chronological expandable rows mapped to message IDs
     if (session.events && session.events.length) {
       session.events.forEach(ev => {
-        if (ev.type === 'action_start' || ev.type === 'observation') {
+        if (ev.type === 'action_start' || ev.type === 'observation' || ev.type === 'memory') {
           const payload = ev.payload || {};
           let targetMsg = null;
           if (payload.message_id) {
@@ -278,11 +282,11 @@ async function selectSession(id) {
           }
           if (targetMsg) {
             appendActivity(targetMsg, {
-              type: ev.type,
-              call_id: payload.call_id,
-              tool: payload.tool,
-              args: payload.args,
-              result: payload.result,
+              type: ev.type === 'memory' ? 'observation' : ev.type,
+              call_id: ev.type === 'memory' ? `memory-${id}-${ev.id || ev.event_id}` : payload.call_id,
+              tool: ev.type === 'memory' ? 'local_memory' : payload.tool,
+              args: ev.type === 'memory' ? payload : payload.args,
+              result: ev.type === 'memory' ? payload : payload.result,
               path: payload.path,
               canonical_path: payload.canonical_path,
               step: ev.step,
@@ -292,6 +296,11 @@ async function selectSession(id) {
         }
       });
     }
+
+    $('conversation').querySelectorAll('.message.assistant').forEach(article => {
+      const saved = (session.messages || []).find(message => message.id === article.dataset.messageId);
+      setActivityState(article, saved?.status === 'running' ? session.status : saved?.status || 'complete');
+    });
 
     // Render continuation card if paused at step limit
     if (session.status === 'paused_limit') {
@@ -303,6 +312,11 @@ async function selectSession(id) {
     scrollChat(true);
 
     // Connect to reconnectable event stream
+    // Completed/paused messages already contain their final text. Resume after
+    // the stored snapshot instead of appending historical token events again.
+    if (!['running','waiting_model','waiting_desktop','stopping','awaiting_approval'].includes(session.status)) {
+      state.lastEventIds[id] = Math.max(state.lastEventIds[id] || 0, session.event_high_watermark || 0);
+    }
     connectSessionStream(id);
   } catch (e) {
     toast(`Could not load session ${id}.`);
@@ -374,6 +388,7 @@ function connectSessionStream(session_id) {
       if (state.current === session_id) {
         $('runStatus').textContent = s === 'waiting_model' ? 'Waiting in model queue…' : s === 'waiting_desktop' ? 'Waiting for desktop lock…' : s === 'stopping' ? 'Stopping…' : s === 'running' ? 'Working on it…' : 'Ready when you are';
         updateRunningControls();
+        setActivityState($('conversation').lastElementChild, s);
       }
     }
 
@@ -391,6 +406,16 @@ function connectSessionStream(session_id) {
       body.innerHTML = renderMarkdown(body.dataset.raw);
       ensureSafeLinks(body);
       scrollChat();
+    } else if (eventType === 'memory') {
+      if (!lastArticle || !lastArticle.classList.contains('assistant')) {
+        lastArticle = renderMessage({role:'assistant',content:'',status:'running'});
+      }
+      appendActivity(lastArticle, {type:'observation', tool:'local_memory',
+        call_id:`memory-${session_id}-${eventId}`, result:data, args:data});
+      if (Array.isArray(data.recalled_layer_ids)) {
+        state.memoryBySession[session_id] = data;
+        updateContext();
+      }
     } else if (eventType === 'action_start' || eventType === 'observation') {
       if (!lastArticle || !lastArticle.classList.contains('assistant')) {
         lastArticle = renderMessage({role: 'assistant', content: '', status: 'running'});
@@ -398,10 +423,14 @@ function connectSessionStream(session_id) {
       appendActivity(lastArticle, {type: eventType, ...data});
       $('runStatus').textContent = eventType === 'action_start' ? `Executing ${data.tool}…` : 'Evaluating result…';
     } else if (eventType === 'paused_limit') {
+      setActivityState(lastArticle, 'paused_limit');
       state.runningSessionIds.delete(session_id);
       updateRunningControls();
       renderContinuationCard();
     } else if (eventType === 'done' || eventType === 'interrupted' || eventType === 'error') {
+      setActivityState(lastArticle, eventType === 'done' ? 'complete' : eventType);
+      const pending = lastArticle?.querySelector('.pending-text');
+      if (pending) pending.remove();
       state.runningSessionIds.delete(session_id);
       updateRunningControls();
       loadSessionsList();
@@ -417,7 +446,7 @@ function connectSessionStream(session_id) {
     }
   };
 
-  ['status', 'step_start', 'token', 'action_start', 'observation', 'paused_limit', 'done', 'interrupted', 'error'].forEach(evt => {
+  ['memory', 'status', 'step_start', 'token', 'action_start', 'observation', 'paused_limit', 'done', 'interrupted', 'error'].forEach(evt => {
     es.addEventListener(evt, e => {
       try {
         const data = JSON.parse(e.data);
@@ -700,6 +729,119 @@ function downloadActiveFile() {
 // Message & Chronological Expandable Activity Rendering
 // -------------------------------------------------------------
 
+
+function createActivityFeed(article) {
+  const feed = document.createElement('details');
+  feed.className = 'activity-feed';
+  feed.hidden = true;
+  feed.open = article.dataset.workState === 'running';
+  feed.innerHTML = `<summary class="work-summary">${icon('activity')}<span class="work-label" role="status" aria-live="polite">Working…</span><svg class="work-chevron" aria-hidden="true"><use href="#i-chevron"/></svg><span class="work-indicator" aria-hidden="true"></span></summary><div class="activity-list" role="list" aria-label="Work activity"></div>`;
+  return feed;
+}
+
+function updateActivitySummary(article) {
+  const feed = article.querySelector('.activity-feed');
+  if (!feed) return;
+  const rows = [...feed.querySelectorAll('.activity-row')];
+  feed.hidden = rows.length === 0;
+  if (!rows.length) return;
+  const active = ['running', 'waiting_model', 'waiting_desktop', 'stopping', 'awaiting_approval'].includes(article.dataset.workState);
+  const categories = new Set(rows.map(row => row.dataset.category));
+  const descriptions = [
+    ['browser', 'using the browser', 'used the browser'],
+    ['write', 'editing files', 'edited files'],
+    ['execute', 'running commands', 'ran commands'],
+    ['search', 'searching files', 'searched files'],
+    ['read', 'reading files', 'read files'],
+    ['desktop', 'using desktop apps', 'used desktop apps'],
+    ['memory', 'recalling local memory', 'recalled local memory'],
+    ['verify', 'checking results', 'checked results']
+  ].filter(([category]) => categories.has(category)).map(item => item[active ? 1 : 2]);
+  let label = descriptions.join(', ') || (active ? 'working' : 'finished working');
+  label = label[0].toUpperCase() + label.slice(1);
+  const workState = article.dataset.workState;
+  const prefix = {waiting_model: 'Waiting for model', waiting_desktop: 'Waiting for desktop', awaiting_approval: 'Waiting for approval', stopping: 'Stopping', paused_limit: 'Paused', interrupted: 'Stopped', stopped: 'Stopped', error: 'Stopped with an error', failed: 'Stopped with an error'}[workState];
+  if (prefix) label = `${prefix} · ${label[0].toLowerCase() + label.slice(1)}`;
+  else if (active) label = `Working · ${label[0].toLowerCase() + label.slice(1)}`;
+  const failed = rows.filter(row => row.dataset.state === 'error').length;
+  if (failed) label += ` · ${failed} failed ${failed === 1 ? 'action' : 'actions'}`;
+  const labelNode = feed.querySelector('.work-label');
+  if (labelNode.textContent !== label) labelNode.textContent = label;
+  feed.querySelector('.work-summary').title = label;
+  feed.classList.toggle('is-working', active);
+}
+
+function setActivityState(article, workState) {
+  if (!article || !article.classList.contains('assistant')) return;
+  article.dataset.workState = workState;
+  const active = ['running', 'waiting_model', 'waiting_desktop', 'stopping', 'awaiting_approval'].includes(workState);
+  const actions = article.querySelector('.message-actions');
+  if (actions) {
+    actions.hidden = active;
+    const label = actions.querySelector('.response-state');
+    if (label) label.textContent = active ? 'Working' : ['interrupted', 'stopped'].includes(workState) ? 'Stopped' : ['error', 'failed'].includes(workState) ? 'Failed' : workState === 'paused_limit' ? 'Paused' : 'Complete';
+  }
+  if (!active) {
+    article.querySelectorAll('.activity-row[data-state="running"]').forEach(row => {
+      row.dataset.state = workState === 'error' || workState === 'failed' ? 'error' : 'interrupted';
+      row.querySelector('.activity-row-status').textContent = row.dataset.state === 'error' ? 'Failed' : 'Interrupted';
+    });
+  }
+  updateActivitySummary(article);
+}
+
+function activityPresentation(tool, args, result, isStart, path) {
+  const failed = !isStart && (result.success === false || result.error || (result.exit_code != null && Number(result.exit_code) !== 0));
+  let category = 'desktop', glyph = 'activity', title = '';
+  const verb = (present, past) => isStart ? present : past;
+  const file = value => `<span class="activity-filename">${escapeHTML(shortPath(value))}</span>`;
+  if (tool === 'write_file') {
+    category = 'write'; glyph = 'edit';
+    const diff = String(result.diff || '');
+    const lines = diff.split('\n');
+    const added = lines.filter(line => line.startsWith('+') && !line.startsWith('+++')).length;
+    const removed = lines.filter(line => line.startsWith('-') && !line.startsWith('---')).length;
+    const created = diff.includes('--- /dev/null') || result.created === true;
+    title = `${verb('Editing', created ? 'Created' : 'Edited')} ${file(path)}`;
+    if (!isStart && !failed && diff) title += ` <span class="activity-change">+${added} −${removed}</span>`;
+  } else if (tool === 'read_file' || tool === 'list_directory') {
+    category = 'read'; glyph = tool === 'list_directory' ? 'folder' : 'file';
+    title = `${verb('Reading', 'Read')} ${file(path || args.path || args.directory || '')}`;
+  } else if (['run_python', 'run_powershell', 'start_process', 'poll_process', 'stop_process'].includes(tool)) {
+    category = 'execute'; glyph = 'terminal';
+    const target = args.command || args.script_path || args.path || args.executable || (args.pid ? `process ${args.pid}` : 'command');
+    title = `${verb(tool === 'stop_process' ? 'Stopping' : tool === 'poll_process' ? 'Checking' : 'Running', tool === 'stop_process' ? 'Stopped' : tool === 'poll_process' ? 'Checked' : 'Ran')} ${escapeHTML(target)}`;
+  } else if (['find_folder', 'search_filesystem', 'search_file_content'].includes(tool)) {
+    category = 'search'; glyph = 'search';
+    title = `${verb('Searching', 'Searched')} ${escapeHTML(args.query || args.pattern || args.text || 'files')}`;
+  } else if (tool === 'local_memory' || tool === 'recall_memory') {
+    category = 'memory'; glyph = 'memory';
+    title = result.dossier ? 'Saved local memory dossier' : `${verb('Searching', 'Recalled')} local memory${args.query ? ` · ${escapeHTML(args.query)}` : ''}`;
+  } else if (tool === 'complete_task' || tool === 'register_artifact') {
+    category = 'verify'; glyph = 'check';
+    title = tool === 'complete_task' ? verb('Checking task completion', 'Checked task completion') : `${verb('Registering', 'Registered')} ${escapeHTML(args.title || 'artifact')}`;
+  } else {
+    const labels = {
+      inspect_environment: ['Checking environment', 'Checked environment'],
+      launch_app: [`Opening ${args.app_name || 'application'}`, `Opened ${args.app_name || 'application'}`],
+      switch_window: [`Finding ${args.title || 'window'}`, `Selected ${args.title || 'window'}`],
+      inspect_ui: ['Inspecting application', 'Inspected application'],
+      take_screenshot: ['Capturing screenshot', 'Captured screenshot'],
+      open_path: [`Opening ${path || args.url || 'item'}`, `Opened ${path || args.url || 'item'}`],
+      type_text: ['Entering text', 'Entered text'], press_hotkey: ['Pressing keyboard shortcut', 'Pressed keyboard shortcut'],
+      mouse_move: ['Moving pointer', 'Moved pointer'], mouse_click: ['Clicking application', 'Clicked application'],
+      mouse_drag: ['Dragging in application', 'Dragged in application'], mouse_scroll: ['Scrolling application', 'Scrolled application']
+    };
+    const label = labels[tool] || [`Using ${tool.replaceAll('_', ' ')}`, `Used ${tool.replaceAll('_', ' ')}`];
+    title = escapeHTML(label[isStart ? 0 : 1]);
+    // A browser category is shown only when the actual target is a URL.
+    if (tool === 'open_path' && /^https?:\/\//i.test(path || args.url || '')) { category = 'browser'; glyph = 'globe'; }
+    if (tool === 'inspect_environment') { category = 'verify'; glyph = 'check'; }
+  }
+  if (failed) title = `Failed · ${title}`;
+  return {category, glyph, title, state: isStart ? 'running' : failed ? 'error' : 'complete'};
+}
+
 function renderMessage(message) {
   const article = document.createElement('article');
   article.className = 'message ' + message.role;
@@ -721,9 +863,8 @@ function renderMessage(message) {
       article.append(label);
     }
   } else {
-    const feed = document.createElement('div');
-    feed.className = 'activity-feed';
-    article.append(feed);
+    article.dataset.workState = message.status || 'complete';
+    article.append(createActivityFeed(article));
 
     const body = document.createElement('div');
     body.className = 'message-body';
@@ -753,8 +894,7 @@ function renderMessage(message) {
 function appendActivity(article, event) {
   let feed = article.querySelector('.activity-feed');
   if (!feed) {
-    feed = document.createElement('div');
-    feed.className = 'activity-feed';
+    feed = createActivityFeed(article);
     const body = article.querySelector('.message-body');
     article.insertBefore(feed, body);
   }
@@ -764,12 +904,13 @@ function appendActivity(article, event) {
   const isStart = event.type === 'action_start';
   const callId = event.call_id || event.payload?.call_id || (event.step ? `act-${event.run_id || 'run'}-${event.step}-${tool}` : `act-${Date.now()}`);
 
-  let row = feed.querySelector(`[data-act-id="${callId}"]`);
+  let row = [...feed.querySelectorAll('.activity-row')].find(item => item.dataset.actId === String(callId));
   if (!row) {
-    row = document.createElement('div');
+    row = document.createElement('details');
     row.className = 'activity-row';
+    row.setAttribute('role', 'listitem');
     row.dataset.actId = callId;
-    feed.append(row);
+    feed.querySelector('.activity-list').append(row);
   }
 
   // Preserve arguments on row so observation turn never loses filenames or parameters
@@ -784,7 +925,14 @@ function appendActivity(article, event) {
   let pills = [];
   let detailsHtml = '';
 
-  if (tool === 'find_folder') {
+  if (tool === 'local_memory') {
+    category = 'search';
+    const memory = event.result || {};
+    title = memory.dossier ? 'Saved local memory dossier' : `Recalled ${(memory.recalled_layer_ids || []).length} local memory layer(s)`;
+    detailsHtml = memory.dossier
+      ? `<a class="activity-file-link" data-path="${escapeHTML(memory.dossier.path)}">${escapeHTML(memory.dossier.filename)}</a><p>Extracted facts with source references; original history retained.</p>`
+      : `<div class="activity-field"><strong>Recent context:</strong> ${memory.hot_tokens}/${memory.hot_limit} tokens</div><div class="activity-field"><strong>Recalled evidence:</strong> ${memory.recall_tokens}/${memory.recall_limit} tokens</div><div class="activity-field"><strong>Source layers:</strong> ${escapeHTML((memory.recalled_layer_ids || []).join(', ') || 'No matching older facts')}</div><div class="activity-field"><strong>Preparation:</strong> ${memory.retrieval_ms} ms</div>`;
+  } else if (tool === 'find_folder') {
     category = 'search';
     const query = effectiveArgs.query || '';
     if (isStart) {
@@ -897,7 +1045,7 @@ function appendActivity(article, event) {
         if (l.startsWith('+') && !l.startsWith('+++')) added++;
         if (l.startsWith('-') && !l.startsWith('---')) deleted++;
       });
-      const isNew = deleted === 0 && added > 0;
+      const isNew = res.created === true || diff.includes('--- /dev/null');
       const changeText = isNew ? `+${added || lineCount} lines` : `+${added} / −${deleted} lines`;
       title = `${isNew ? 'Created' : 'Edited'} ${escapeHTML(shortPath(path))} · ${changeText}`;
       if (added > 0) pills.push(`<span class="pill pill-green">+${added || lineCount}</span>`);
@@ -910,7 +1058,7 @@ function appendActivity(article, event) {
         ${diff ? `<button class="diff-view-btn" data-diff-path="${escapeHTML(path)}">${icon('code')} Open Diff in Right Panel</button>
                   <pre class="activity-pre">${escapeHTML(diff.slice(0, 1200))}</pre>` : ''}
       `;
-      if (path) {
+      if (path && res.success !== false) {
         openFileInPanel(path, {diff, status: isNew ? 'created' : 'modified', forceOpen: false});
       }
     }
@@ -969,17 +1117,24 @@ function appendActivity(article, event) {
     detailsHtml = `<pre class="activity-pre">${escapeHTML(JSON.stringify(effectiveArgs || event.result, null, 2))}</pre>`;
   }
 
+  const presentation = activityPresentation(tool, effectiveArgs, event.result || {}, isStart, effectivePath);
+  if (presentation.state === 'error') {
+    detailsHtml = `<div class="activity-field"><strong>Action failed</strong><span>The action did not finish successfully.</span></div><pre class="activity-pre">${escapeHTML(JSON.stringify(event.result || {}, null, 2))}</pre>`;
+  }
+  const wasOpen = row.open;
+  row.dataset.category = presentation.category;
+  row.dataset.state = presentation.state;
   row.innerHTML = `
-    <div class="activity-summary">
-      <span class="activity-icon-badge ${category}">${icon(category === 'search' ? 'search' : category === 'read' ? 'file' : category === 'write' ? 'code' : category === 'verify' ? 'check' : 'terminal')}</span>
-      <span class="activity-title">${title}</span>
-      <div class="activity-pills">${pills.join('')}</div>
-      <svg class="activity-chevron-icon"><use href="#i-chevron"/></svg>
-    </div>
-    <div class="activity-details" hidden>
-      ${detailsHtml}
-    </div>
+    <summary class="activity-summary">
+      <span class="activity-icon-badge">${icon(presentation.glyph)}</span>
+      <span class="activity-title">${presentation.title}</span>
+      <span class="activity-row-status">${presentation.state === 'running' ? 'Running' : presentation.state === 'error' ? 'Failed' : 'Complete'}</span>
+      <span class="activity-running-dot" aria-hidden="true"></span>
+      <svg class="activity-chevron-icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+    </summary>
+    <div class="activity-details">${detailsHtml}</div>
   `;
+  row.open = wasOpen;
 
   const sumEl = row.querySelector('.activity-summary');
   const detEl = row.querySelector('.activity-details');
@@ -1006,12 +1161,10 @@ function appendActivity(article, event) {
         }
       } catch (error) { toast(error.message || 'Could not copy generated code.'); }
     };
-    sumEl.querySelector('.activity-chevron-icon').before(copyButton);
+    detEl.prepend(copyButton);
   }
-  sumEl.onclick = () => {
-    const isExpanded = row.classList.toggle('expanded');
-    detEl.hidden = !isExpanded;
-  };
+  updateActivitySummary(article);
+  article.querySelector('.pending-text')?.remove();
 
   attachFileClickListeners(detEl);
   detEl.querySelectorAll('[data-diff-path]').forEach(btn => {
@@ -1021,32 +1174,6 @@ function appendActivity(article, event) {
     };
   });
 
-  scrollChat();
-}
-
-function appendVerificationRow(feed, {target, item, result, passed}) {
-  const vRow = document.createElement('div');
-  vRow.className = 'activity-row';
-  vRow.innerHTML = `
-    <div class="activity-summary">
-      <span class="activity-icon-badge verify">${icon('check')}</span>
-      <span class="activity-title">Verified ${escapeHTML(target)} · ${escapeHTML(result)}</span>
-      <div class="activity-pills"><span class="pill pill-green">Verified</span></div>
-      <svg class="activity-chevron-icon"><use href="#i-chevron"/></svg>
-    </div>
-    <div class="activity-details" hidden>
-      <div class="activity-field"><strong>Verified Item:</strong> <span>${escapeHTML(item)}</span></div>
-      <div class="activity-field"><strong>Actual Result:</strong> <span style="color:#4ade80;font-weight:550">${escapeHTML(result)}</span></div>
-      <div class="activity-field"><strong>Status:</strong> <span class="pill pill-green">${passed ? 'PASSED' : 'FAILED'}</span></div>
-    </div>
-  `;
-  const sumEl = vRow.querySelector('.activity-summary');
-  const detEl = vRow.querySelector('.activity-details');
-  sumEl.onclick = () => {
-    const exp = vRow.classList.toggle('expanded');
-    detEl.hidden = !exp;
-  };
-  feed.append(vRow);
   scrollChat();
 }
 
@@ -1196,33 +1323,24 @@ function openDialog(title, html) {
   if (!$('dialog').open) $('dialog').showModal();
 }
 
-function showContextDetails() {
-  openDialog('Understanding the 16k Token Limit', `
-  <p class="dialog-copy">Syntra Max Aperion allocates a local <strong>16,384 token context window</strong> (~65,000 characters). This bounds the maximum active working memory held during multi-step execution.</p>
-  <div class="detail-row"><span>Working Context</span><strong>16,384 tokens (~65,000 characters)</strong></div>
-  <div class="detail-row"><span>Active Usage</span><strong>${$('contextCount').textContent}</strong></div>
-  <div class="detail-row"><span>Context Budgeting</span><strong>Prioritizes objective, discoveries, and recent tool pairs</strong></div>
-  <p class="dialog-copy" style="margin-top:14px">During extended multi-step tasks, Syntra automatically trims older intermediate prose while strictly retaining discovered paths, system instructions, and tool outputs. Complete history is permanently saved in SQLite.</p>
-  <div class="dialog-actions">
-    <button class="secondary-button" id="closeCtxDialog">Got it</button>
-    <button class="primary-button" id="exportFromCtx">Export Full Session (.md)</button>
-  </div>`);
-  $('closeCtxDialog').onclick = () => $('dialog').close();
-  $('exportFromCtx').onclick = () => { $('dialog').close(); exportSession(); };
-}
-
-function showHelp() {
-  openDialog('Syntra Slashes Guide', `
-  <p class="dialog-copy">A Windows-native autonomous execution agent combining multi-session background processing with visible desktop automation.</p>
-  <div class="shortcut-row"><span>Download Icon (Top Right)</span><span style="color:#ddd2f0;font-size:11px">Export complete Markdown transcript (.md)</span></div>
-  <div class="shortcut-row"><span>16k Indicator (Bottom Right)</span><span style="color:#ddd2f0;font-size:11px">Context budgeting & memory limits info</span></div>
-  <div class="shortcut-row"><span>Stop All (Sidebar)</span><span style="color:#ddd2f0;font-size:11px">Emergency cancel all concurrent runs</span></div>
-  <div class="shortcut-row"><span>Send message</span><kbd>Enter</kbd></div>
-  <div class="shortcut-row"><span>New line</span><kbd>Shift Enter</kbd></div>
-  <div class="shortcut-row"><span>New session</span><kbd>Ctrl N</kbd></div>
-  <div class="shortcut-row"><span>Search sessions</span><kbd>Ctrl K</kbd></div>
-  <div class="shortcut-row"><span>Emergency Stop</span><kbd>Esc</kbd></div>
-  <p class="dialog-copy" style="margin-top:15px"><strong>Multi-session Concurrency</strong>: Start a long search in Session A, switch to Session B, and continue working without interrupting A. Background jobs run concurrently.</p>`);
+async function showStringDetails() {
+  const sessionId = state.current;
+  const memory = state.memoryBySession[sessionId] || (state.activeSessionData?.events || []).filter(event => event.type === 'memory' && Array.isArray(event.payload?.recalled_layer_ids)).at(-1)?.payload;
+  const ids = [...new Set(memory?.recalled_layer_ids || [])];
+  openDialog('Local strings', `
+    <p class="dialog-copy">Older conversation and task results are saved as searchable strings on your PC. Syntra retrieves relevant excerpts when needed.</p>
+    <div class="detail-row"><span>Latest recalled strings</span><strong>${escapeHTML(ids.join(', ') || 'None in this session yet')}</strong></div>
+    <div class="detail-row"><span>Saved strings</span><strong id="savedStrings">${sessionId ? 'Checking…' : 'Start a conversation'}</strong></div>
+    <p class="dialog-copy" style="margin-top:14px">The indicator shows strings used in the latest automatic recall. Original conversation history stays saved locally.</p>`);
+  if (!sessionId) return;
+  try {
+    const response = await fetch(`/api/memory/status?session_id=${encodeURIComponent(sessionId)}`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    if ($('savedStrings') && state.current === sessionId) $('savedStrings').textContent = String(data.layers ?? 0);
+  } catch (error) {
+    if ($('savedStrings')) $('savedStrings').textContent = 'Unavailable';
+  }
 }
 
 function showModel() {
@@ -1331,11 +1449,11 @@ async function archiveSession() {
     const r = await fetch('/api/session/compact', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({title: state.activeSessionData.title, history: msgs.map(m => ({role: m.role, content: m.content}))})
+      body: JSON.stringify({session_id: state.current})
     });
     const result = await r.json();
     if (!r.ok) throw new Error(result.error);
-    toast(`Saved local transcript: ${result.filename}`);
+    toast(`Saved local memory dossier: ${result.filename}`);
   } catch (e) {
     toast(e.message || 'Could not save transcript.');
   }
@@ -1430,9 +1548,8 @@ $('settingsButton').onclick = showModel;
 $('sessionTitle').onclick = renameSession;
 $('modelButton').onclick = showModel;
 $('engineButton').onclick = showModel;
-$('helpButton').onclick = showHelp;
 $('exportButton').onclick = exportSession;
-$('contextCount').onclick = showContextDetails;
+$('stringsIndicator').onclick = showStringDetails;
 
 // File Panel Controls
 $('toggleFilePanel').onclick = () => toggleFilePanel();

@@ -9,8 +9,8 @@ Created by **Rithvikyada**.
 **[Visit the official website and download Syntra Slash](https://syntraslash.pages.dev/#get-syntra)**
 
 - [Official website](https://syntraslash.pages.dev/)
-- [Windows installer — Syntra-Slash-Setup.exe](https://github.com/yadarithvik/syntraslash-releases/releases/download/v1.1.0/Syntra-Slash-Setup.exe)
-- [Release notes and checksums](https://github.com/yadarithvik/syntraslash-releases/releases/tag/v1.1.0)
+- [Windows installer — Syntra-Slash-Setup.exe](https://github.com/yadarithvik/syntraslash-releases/releases/download/v1.2.0/Syntra-Slash-Setup.exe)
+- [Release notes and checksums](https://github.com/yadarithvik/syntraslash-releases/releases/tag/v1.2.0)
 
 This repository contains the website deployed to Cloudflare Pages, the Windows app source, and developer documentation. The existing Windows download remains available through GitHub Releases.
 
@@ -22,7 +22,10 @@ Syntra Slash provides a Windows desktop workspace around the Syntra Max Aperion 
 - **Two working modes:** Background tools work with commands and workspace files; Transparent tools interact with Windows applications.
 - **Persistent sessions:** return to conversations, search and rename sessions, and export Markdown.
 - **Text and code attachments:** include bounded file excerpts in a conversation.
-- **Task activity:** follow streamed responses, tool activity, and file changes.
+- **Local strings:** persistent conversation layers with session-scoped keyword recall and source references.
+- **Markdown dossiers:** completed tasks save bounded, extractive records while keeping original history.
+- **Task activity:** compact, collapsible work summaries with expandable command output, file changes, and live/failure/interruption states.
+- **Strings indicator:** see which stored strings the latest automatic recall used.
 - **Stop controls:** interrupt work with Stop or Escape.
 - **Model setup:** download with pause/resume and checksum verification, or import a matching existing model.
 
@@ -85,7 +88,7 @@ From the repository root, run:
 python -m http.server 8000 --directory website --bind 127.0.0.1
 ```
 
-Open `http://127.0.0.1:8000`. No frontend build step is required. The download button continues to use the existing v1.1.0 installer URL.
+Open `http://127.0.0.1:8000`. No frontend build step is required. The download button continues to use the current v1.2.0 installer URL.
 
 For a manual Cloudflare Pages upload, use the **contents of `website/`** as the upload root so `index.html` is at the root. The published address remains [syntraslash.pages.dev](https://syntraslash.pages.dev/).
 
@@ -106,3 +109,8 @@ Background commands and desktop tools act with the Windows user's permissions. D
 Syntra Slash branding and application work are by **Rithvikyada**. Third-party model weights, the inference runtime, Python, and frontend libraries retain their own licenses and notices. Bundled license texts are kept in [desktop-app/licenses](desktop-app/licenses), and frontend vendor notices remain in their original files.
 
 See [source provenance](docs/SOURCE-PROVENANCE.md) for the relationship between these files and the earlier release/deployment.
+
+
+## Syntra 1.2.0
+
+See [release notes](docs/RELEASE-v1.2.0.md), [verification](docs/VERIFICATION-v1.2.0.md), and [implemented memory behavior](desktop-app/MEMORY_IMPLEMENTATION.md). Recall currently uses FTS5 keyword search, and dossiers select source facts. Model input remains bounded; stored history and active context are separate.

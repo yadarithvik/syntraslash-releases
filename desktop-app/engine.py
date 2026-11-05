@@ -21,10 +21,11 @@ import model_bridge
 import runtime_discovery
 import session_manager
 import session_store
+from memory_engine import LayeredMemory
 
 DIRECTORY = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
 BASE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else DIRECTORY
-MEMORY_DIR = BASE_DIR / 'memory'
+MEMORY_DIR = session_store.MEMORY_DIR
 
 
 class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
@@ -97,8 +98,17 @@ class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
                 'desktop_coordinator': desktop_status,
                 'model_queue': queue_status,
                 'workspace': str(BASE_DIR),
-                'context_limit': 16384
+                'context_limit': 16384,
+                'version': '1.2.0-memory-preview',
+                'memory': {'persistent':True,'retrieval':'SQLite FTS5',
+                           'hot_tokens':2048,'recall_tokens':2048,'dossier':'extractive'}
             })
+
+        if route == '/api/memory/status':
+            session_id = query.get('session_id',[''])[0]
+            if not session_id or not session_store.get_session_metadata(session_id):
+                return self.json_response({'error':'Session not found.'},404)
+            return self.json_response(LayeredMemory(MEMORY_DIR,session_id).status())
 
         # 2. List all sessions
         if route == '/api/sessions':
@@ -342,21 +352,21 @@ class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
             count = session_manager.stop_all_tasks()
             return self.json_response({'status': 'stopped_all', 'cancelled_count': count})
 
-        # 6. Compact / Export transcript
+        # 6. Bounded extractive dossier with persistent source references.
         if route == '/api/session/compact':
+            session_id = str(payload.get('session_id',''))
+            session = session_store.get_session_metadata(session_id)
+            if not session:
+                return self.json_response({'error':'Session not found.'},404)
+            if session.get('status') in ('running','waiting_model','waiting_desktop','stopping'):
+                return self.json_response({'error':'Wait for this task to stop before consolidating its memory.'},409)
             try:
-                transcript_dir = MEMORY_DIR / 'compacted_sessions'
-                transcript_dir.mkdir(parents=True, exist_ok=True)
-                title = str(payload.get('title', 'Session'))
-                name = re.sub(r'[^\w -]', '', title)[:45].strip() or 'Session'
-                filename = time.strftime('%Y-%m-%d_%H-%M-%S_') + name + '_' + uuid.uuid4().hex[:4] + '.md'
-                content = f"# {title}\n\nSyntra Slashes Local Transcript\nGenerated: {time.ctime()}\n\n"
-                for turn in payload.get('history', []):
-                    content += f"## {turn.get('role', 'message').title()}\n\n{turn.get('content', '')}\n\n"
-                (transcript_dir / filename).write_text(content, encoding='utf-8')
-                return self.json_response({'status': 'saved', 'filename': filename})
-            except Exception as e:
-                return self.json_response({'error': str(e)}, 500)
+                memory = LayeredMemory(MEMORY_DIR,session_id)
+                memory.bootstrap(session_store.get_connection())
+                dossier = memory.compact(session.get('title','Session'))
+                return self.json_response({'status':'saved',**dossier})
+            except Exception as error:
+                return self.json_response({'error':str(error)},500)
 
         return self.json_response({'error': 'Route not found.'}, 404)
 
@@ -366,6 +376,7 @@ class SyntraServerHandler(http.server.SimpleHTTPRequestHandler):
         if route.startswith('/api/sessions/'):
             session_id = route[len('/api/sessions/'):].strip()
             session_manager.stop_session_task(session_id)
+            LayeredMemory(MEMORY_DIR,session_id).delete_session()
             session_store.delete_session(session_id)
             return self.json_response({'status': 'deleted', 'session_id': session_id})
         return self.json_response({'error': 'Not found.'}, 404)

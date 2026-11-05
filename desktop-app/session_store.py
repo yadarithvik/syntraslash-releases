@@ -185,6 +185,18 @@ def list_sessions():
     return results
 
 
+def get_session_metadata(session_id):
+    row = get_connection().execute('SELECT * FROM sessions WHERE id=?', (session_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_recent_messages(session_id, limit=8):
+    rows = get_connection().execute(
+        'SELECT id,role,content,status FROM messages WHERE session_id=? AND content!=? ORDER BY time DESC,rowid DESC LIMIT ?',
+        (session_id, '', max(1, min(int(limit), 32)))).fetchall()
+    return [dict(row) for row in reversed(rows)]
+
+
 def get_session(session_id):
     """Retrieve a full session including ordered messages and recent events."""
     conn = get_connection()
@@ -223,6 +235,7 @@ def get_session(session_id):
         'updated': s['updated_at'],
         'status': s['status'],
         'messages': messages,
+        'event_high_watermark': conn.execute('SELECT COALESCE(MAX(event_id),0) FROM events WHERE session_id=?',(session_id,)).fetchone()[0],
         'events': get_events(session_id, from_event_id=0, limit=1000)
     }
 

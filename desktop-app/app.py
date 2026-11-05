@@ -137,6 +137,18 @@ class SetupAPI:
 
 
 def main():
+    if '--verify-memory' in sys.argv:
+        from diagnostics import verify_memory
+        index=sys.argv.index('--verify-memory')
+        if len(sys.argv)<=index+1:
+            raise SystemExit('Provide a JSON report path after --verify-memory.')
+        raise SystemExit(verify_memory(sys.argv[index+1]))
+    if '--diagnostic-api' in sys.argv:
+        # Loopback-only backend mode for local development and package verification.
+        import engine
+        index=sys.argv.index('--diagnostic-api')
+        engine.serve(int(sys.argv[index+1]))
+        return
     api = SetupAPI()
     resources = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
     api._window = webview.create_window('Syntra Slash', str(resources / 'model-setup.html'),

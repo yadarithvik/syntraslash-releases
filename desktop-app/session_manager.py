@@ -18,6 +18,7 @@ import event_bus
 import model_bridge
 import session_store
 import tools_registry
+from memory_engine import LayeredMemory
 
 _ACTIVE_RUNNERS = {}  # session_id -> SessionRunner
 _RUNNERS_LOCK = threading.Lock()
@@ -44,8 +45,27 @@ class SessionRunner:
 
     def run_loop(self):
         """Continuous Multi-Step Observation-Action Loop with Context Budgeting & Recovery."""
-        session = session_store.get_session(self.session_id)
+        session = session_store.get_session_metadata(self.session_id)
         if not session:
+            return
+
+        try:
+            memory = LayeredMemory(session_store.MEMORY_DIR, self.session_id, counter=model_bridge.count_tokens)
+            memory.bootstrap(session_store.get_connection(), self.cancel_event)
+        except InterruptedError:
+            self.update_status('stopped')
+            with _RUNNERS_LOCK:
+                current = _ACTIVE_RUNNERS.get(self.session_id)
+                if current and current.run_id == self.run_id:
+                    _ACTIVE_RUNNERS.pop(self.session_id, None)
+            return
+        except Exception as error:
+            self.update_status('failed')
+            event_bus.publish_event(self.session_id,self.run_id,0,'error',{'error':'Local memory initialization failed: '+str(error)})
+            with _RUNNERS_LOCK:
+                current = _ACTIVE_RUNNERS.get(self.session_id)
+                if current and current.run_id == self.run_id:
+                    _ACTIVE_RUNNERS.pop(self.session_id, None)
             return
 
         workspace = session.get('workspace')
@@ -94,7 +114,7 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
         messages.append({'role': 'system', 'content': system_instruction})
 
         # Append prior turns
-        for m in session.get('messages', []):
+        for m in session_store.get_recent_messages(self.session_id):
             if m.get('content'):
                 messages.append({'role': m['role'], 'content': m['content']})
 
@@ -144,7 +164,8 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
             'command_policy': policy,
             'cancel_event': self.cancel_event,
             'active_pids': self.active_pids,
-            'on_status_change': self.update_status
+            'on_status_change': self.update_status,
+            'memory_engine': memory
         }
 
         try:
@@ -157,9 +178,14 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
                     'max_steps': max_steps
                 })
 
+                # Archive source observations before reducing the active prompt.
+                prepared = memory.prepare(messages, self.prompt, self.cancel_event)
+                event_bus.publish_event(self.session_id, self.run_id, step, 'memory',
+                                        {**memory.last_stats,'message_id':asst_msg_id})
+                messages = [m for m in prepared if not m.get('_memory')]
                 # Step 1: Call Model through fair queue
                 step_res = model_bridge.call_model_step(
-                    messages=messages,
+                    messages=prepared,
                     mode=mode,
                     session_id=self.session_id,
                     run_id=self.run_id,
@@ -300,6 +326,10 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
                     'status': 'paused_limit'
                 })
             else:
+                memory.remember_messages(messages,self.cancel_event)
+                memory.record('message:'+asst_msg_id, 'assistant', assistant_content, self.cancel_event)
+                dossier = memory.compact(session.get('title','Session'), self.cancel_event)
+                event_bus.publish_event(self.session_id, self.run_id, 0, 'memory', {'dossier': dossier,'message_id':asst_msg_id})
                 self.update_status('completed')
                 event_bus.publish_event(self.session_id, self.run_id, 0, 'done', {
                     'status': 'complete',
@@ -331,12 +361,20 @@ A batch stops on the first failure; later actions are skipped. Never claim skipp
                 'error': err_msg
             })
         finally:
-            if self.cancel_event.is_set():
-                self.update_status('stopped')
-            with _RUNNERS_LOCK:
-                curr = _ACTIVE_RUNNERS.get(self.session_id)
-                if curr and curr.run_id == self.run_id:
-                    _ACTIVE_RUNNERS.pop(self.session_id, None)
+            # Preserve final tool results even when completion, failure, or Stop
+            # prevents another model step. Persistence itself performs no actions.
+            try:
+                memory.remember_messages(messages)
+            except Exception as error:
+                self.update_status('failed')
+                event_bus.publish_event(self.session_id,self.run_id,0,'error',{'error':'Could not persist final memory: '+str(error)})
+            finally:
+                if self.cancel_event.is_set():
+                    self.update_status('stopped')
+                with _RUNNERS_LOCK:
+                    curr = _ACTIVE_RUNNERS.get(self.session_id)
+                    if curr and curr.run_id == self.run_id:
+                        _ACTIVE_RUNNERS.pop(self.session_id, None)
 
 
 def start_session_task(session_id, prompt, files=None, is_continuation=False):
