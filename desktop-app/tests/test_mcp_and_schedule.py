@@ -75,6 +75,14 @@ class MCPTests(unittest.TestCase):
         self.assertIn('x'*18000,Path(result['full_result_path']).read_text())
         with self.assertRaises(ValueError):mcp_client.call_tool('fixture','unknown',{})
 
+    def test_qualified_tool_names_are_resolved_only_in_their_server(self):
+        mcp_client.save_server('fixture',sys.executable,[str(self.fake)])
+        contract=mcp_client.list_tools('fixture',tool_name='fixture/echo')
+        self.assertEqual(json.loads(contract['output'])['name'],'echo')
+        result=mcp_client.call_tool('fixture','fixture.echo',{'value':'qualified 5381'})
+        self.assertTrue(result['success']);self.assertIn('5381',result['output'])
+        with self.assertRaises(ValueError):mcp_client.call_tool('fixture','other/echo',{})
+
     def test_default_skill_adaptations_use_syntra_tools(self):
         items=extensions.list_skills()['skills'];self.assertEqual(len(items),12)
         names={x['name'] for x in items}

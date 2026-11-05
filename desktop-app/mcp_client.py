@@ -149,6 +149,7 @@ def status():
 def list_tools(name,query='',tool_name=None):
     client=connect(name)
     if tool_name:
+        tool_name=canonical_tool_name(name,tool_name)
         tool=client.tools.get(tool_name)
         if not tool:raise ValueError('Tool is not advertised by this server.')
         # REA's output schemas can be much larger than its actual tool inputs.
@@ -159,8 +160,16 @@ def list_tools(name,query='',tool_name=None):
     return {'success':True,'total':len(client.tools),'matches':len(tools),'tools':tools[:20],'output':json.dumps(tools[:20],ensure_ascii=False)}
 
 
+def canonical_tool_name(server,tool_name):
+    tool_name=str(tool_name).strip()
+    for prefix in (server+'/',server+'.'):
+        if tool_name.startswith(prefix):return tool_name[len(prefix):]
+    return tool_name
+
+
 def call_tool(name,tool_name,arguments,cancel_event=None):
     client=connect(name)
+    tool_name=canonical_tool_name(name,tool_name)
     if tool_name not in client.tools:raise ValueError('Tool is not advertised by this server. Discover its schema first.')
     if not isinstance(arguments,dict):raise ValueError('MCP arguments must be a JSON object.')
     result=client.request('tools/call',{'name':tool_name,'arguments':arguments},timeout=120,cancel_event=cancel_event)

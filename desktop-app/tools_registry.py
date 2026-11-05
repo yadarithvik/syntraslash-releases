@@ -1068,6 +1068,8 @@ def _execute_tool(tool_name, args, context):
 
     if context.get('cancel_event') and context['cancel_event'].is_set():
         raise InterruptedError('Task cancelled before tool execution.')
+    if tool_name == 'complete_task' and context.get('failed_tools'):
+        return {'success':False,'output':'Task is unverified. Resolve these failed tools before completing: '+', '.join(sorted(context['failed_tools']))}
     if context.get('mode') == 'transparent':
         if tool_name in {'write_file', 'run_python', 'run_powershell', 'start_process'}:
             return {'success': False, 'output': 'Hidden execution is unavailable in Transparent mode. Use the visible application tools.'}

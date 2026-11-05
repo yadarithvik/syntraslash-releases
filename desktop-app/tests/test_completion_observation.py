@@ -3,6 +3,7 @@ import json
 import unittest
 
 import session_manager
+import tools_registry
 
 
 class Memory:
@@ -16,6 +17,10 @@ class Memory:
 
 
 class CompletionObservationTests(unittest.TestCase):
+    def test_background_completion_rejects_unresolved_tool_failure(self):
+        result=tools_registry.execute_tool('complete_task',{'summary':'Done'},{'mode':'background','failed_tools':{'mcp_call_tool'}})
+        self.assertFalse(result['success']);self.assertIn('unverified',result['output'])
+
     def test_completion_waits_for_observed_results_in_either_batch_order(self):
         for complete_first in (False,True):
             with self.subTest(complete_first=complete_first):

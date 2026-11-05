@@ -22,6 +22,6 @@ The installer includes the local inference engine, Python, built-in skills and R
 
 ## Verification
 
-79 automated checks passed, plus source and compiled-runtime integration with the real local 14B model. The agent loads skill guidance, extracts the correct PDF/image values, discovers a REA input schema, and invokes REA. The source and packaged evidence accompany the build handoff. Third-party components retain their original licenses.
+81 automated checks passed, plus source and compiled-runtime integration with the real local 14B model. The agent loads skill guidance, extracts the correct PDF/image values, discovers a REA input schema, and invokes REA. The source and packaged evidence accompany the build handoff. Third-party components retain their original licenses.
 
 Created by **Rithvikyada**. Website: https://syntraslash.pages.dev/
