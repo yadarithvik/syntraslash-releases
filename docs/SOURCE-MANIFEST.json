@@ -1,0 +1,232 @@
+[
+  {
+    "path": ".gitignore",
+    "bytes": 203,
+    "sha256": "cb25c165813edfd8abb6871156f1a9fc83de0350b54aa58c5577ccdb0097d927"
+  },
+  {
+    "path": "desktop-app/app.py",
+    "bytes": 6119,
+    "sha256": "064b8534b28d45f240e376e3dd35c458b496612ad47c42bb1b0901f5b29eaa09"
+  },
+  {
+    "path": "desktop-app/assets/app.css",
+    "bytes": 33575,
+    "sha256": "763dd91279202af7e1187adbc96c254ea901f428a235b57ee9d17df9f81f01c6"
+  },
+  {
+    "path": "desktop-app/assets/app.js",
+    "bytes": 63713,
+    "sha256": "5e67aa7d6b399861096dcab2eb7fac1833aadf3df859293acb335ab5e2a13029"
+  },
+  {
+    "path": "desktop-app/assets/marked.min.js",
+    "bytes": 39903,
+    "sha256": "3e7e7d7feb3e5d58cb6c804f68ab5c24cc7e5eb6270fd6e5cbb9124739217d0c"
+  },
+  {
+    "path": "desktop-app/assets/purify.min.js",
+    "bytes": 29828,
+    "sha256": "cd37898f9782adf54820c413191b5691803f0f137c799d6edcfd38523b4c2c31"
+  },
+  {
+    "path": "desktop-app/assets/syntra-app-icon.png",
+    "bytes": 61035,
+    "sha256": "c8584f7c17f50eb76415fc399d3889bbeaa3b0d6004d1a18e34aae34c957e51b"
+  },
+  {
+    "path": "desktop-app/assets/syntra-logo.png",
+    "bytes": 1211139,
+    "sha256": "1dc69cf19c5f5545e33c5e99f0df2da7f164ed9327448ba2381e6f7fe236c4b8"
+  },
+  {
+    "path": "desktop-app/assets/syntra-mark.png",
+    "bytes": 569524,
+    "sha256": "7299d63d44a9ea6d626655334a9b9e8f92ce80b2bd28ae5ef343212e521d4c9a"
+  },
+  {
+    "path": "desktop-app/assets/syntra.ico",
+    "bytes": 95569,
+    "sha256": "4ebbf96dcc813deb98d2b759dd7e79d7d5f1a43661a59955f5604254e0e1d94d"
+  },
+  {
+    "path": "desktop-app/authorization.py",
+    "bytes": 4949,
+    "sha256": "21468d25e61467f876fbcb0c7bb71e2c1b864e9354365b40c32dd14c986efc1d"
+  },
+  {
+    "path": "desktop-app/bundled_engine.py",
+    "bytes": 4554,
+    "sha256": "2869675a5a1379c8f0fd8c98247c5801c69d6526d0bbeeec89f27507ea6a7796"
+  },
+  {
+    "path": "desktop-app/desktop_agent.py",
+    "bytes": 18121,
+    "sha256": "0dcc48f6a3f327ec9542e337deaa688f3d0ec537b9dcc12134a55aa1446325ac"
+  },
+  {
+    "path": "desktop-app/desktop_coordinator.py",
+    "bytes": 3527,
+    "sha256": "9922dd555608465dba5f890c71a382b9729320daf2c3b7a4f05f1d1cd8b1baeb"
+  },
+  {
+    "path": "desktop-app/engine.py",
+    "bytes": 16548,
+    "sha256": "0466cc8e95af6bd0db9517087dad0b35baf4d91b3b8f9bab9ae225bd9380968f"
+  },
+  {
+    "path": "desktop-app/event_bus.py",
+    "bytes": 3883,
+    "sha256": "b99e4edf231e7e0fb935a93ffb085923b203d837c06c908fd386acf31a5aaa53"
+  },
+  {
+    "path": "desktop-app/guardrails.json",
+    "bytes": 3021,
+    "sha256": "a0b1df50925e5e25a0448c91bce285ba30d382f805397f126257bd8974e0c993"
+  },
+  {
+    "path": "desktop-app/index.html",
+    "bytes": 13311,
+    "sha256": "1e54cbaf18456285af35183e979d1c4834dcad5bb8688e8b936f0692b6056d3f"
+  },
+  {
+    "path": "desktop-app/licenses/llama.cpp-MIT.txt",
+    "bytes": 1078,
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  {
+    "path": "desktop-app/licenses/Model-Apache-2.0.txt",
+    "bytes": 11544,
+    "sha256": "b907c8234b565e5ecefff8232dbb6f1d603fbf9a47a3176db734dcae27175d08"
+  },
+  {
+    "path": "desktop-app/licenses/Python-LICENSE.txt",
+    "bytes": 35407,
+    "sha256": "935cf13e19f8c31b497d20b05d73623431a226b230c3599bc30fa3348979bc68"
+  },
+  {
+    "path": "desktop-app/model-setup.html",
+    "bytes": 9199,
+    "sha256": "a92b456d739640a6fb7cbd678b141412af71f1e813e28d8b975834cab85656ac"
+  },
+  {
+    "path": "desktop-app/model_bridge.py",
+    "bytes": 27669,
+    "sha256": "77e03fb1154124bf00758c3b8210d5ced82e1351525cfc00d847a4e0617efaaf"
+  },
+  {
+    "path": "desktop-app/model_install.py",
+    "bytes": 8663,
+    "sha256": "077ae0c9d2eec443963302743fed1c86cbe3b4ac3c6f26fab77de242713447aa"
+  },
+  {
+    "path": "desktop-app/packaging/syntra-installer.nsi",
+    "bytes": 3521,
+    "sha256": "251fc506d207af1f732269b6622247d5561415690f091be791930e9db958ecb1"
+  },
+  {
+    "path": "desktop-app/perception.py",
+    "bytes": 9450,
+    "sha256": "3072281e74c10d965758d2d56e2b230c1d3efb450ec445364673148d2f465ad1"
+  },
+  {
+    "path": "desktop-app/README.md",
+    "bytes": 583,
+    "sha256": "6bc608730b2a5cad3d169591b379f9040cbd809c400c00d1f0f9af40cccd98f5"
+  },
+  {
+    "path": "desktop-app/requirements.txt",
+    "bytes": 112,
+    "sha256": "36eb8bce702b8219374a39bd2378d26073934be93bda0381023ade99dc89b7bc"
+  },
+  {
+    "path": "desktop-app/runtime_discovery.py",
+    "bytes": 5753,
+    "sha256": "661389c92b0212e16d7cc3651c65c240078444719f7c8f0fa44f03ba93597e5c"
+  },
+  {
+    "path": "desktop-app/session_manager.py",
+    "bytes": 19826,
+    "sha256": "5fd7be1ee0a58b53c277e3a64a404af9e8af9323f8b6a72f75d2785951bff08e"
+  },
+  {
+    "path": "desktop-app/session_store.py",
+    "bytes": 20938,
+    "sha256": "61ac28f9606f1d391dad21ac31f133e71d56692f917e8c8f46dfd5422d5b3b68"
+  },
+  {
+    "path": "desktop-app/syntra-online.spec",
+    "bytes": 1214,
+    "sha256": "4d2bc63f9fa6c51263886943ab81274b90383a91290206af0999209248593e17"
+  },
+  {
+    "path": "desktop-app/syntra-slashes.spec",
+    "bytes": 1138,
+    "sha256": "8a2ce0d1093cfa124b49ccff56297d2938a31e246992ee45aacf6a4d0f204fcf"
+  },
+  {
+    "path": "desktop-app/tests/run_all_acceptance_tests.py",
+    "bytes": 31220,
+    "sha256": "48dc44318e89d5bf642eb23489a51a9966767d948227c7c2e14047d58ad3853e"
+  },
+  {
+    "path": "desktop-app/tests/test_live_model_task.py",
+    "bytes": 3952,
+    "sha256": "dd01a3b2e441aae4fd5de93274febff4e49d99d67cb38be64ea6f3e303e4cb8f"
+  },
+  {
+    "path": "desktop-app/tests/test_model_install.py",
+    "bytes": 5443,
+    "sha256": "ed7f8ed2c9e837e132e1885ef6ec97ee7bcbba390d2312ad95b322c86b11e138"
+  },
+  {
+    "path": "desktop-app/tests/test_transparent_regressions.py",
+    "bytes": 4990,
+    "sha256": "3d7860f6967997fbf582ad1540d549dfa66cc6bfdf05f9143474577e401dc254"
+  },
+  {
+    "path": "desktop-app/tools_registry.py",
+    "bytes": 39896,
+    "sha256": "95b9ea3dc772d8d09287ecb3ab8e77e2bd94f2fde299c4409da5bf47db35486c"
+  },
+  {
+    "path": "docs/DEVELOPMENT.md",
+    "bytes": 3299,
+    "sha256": "6e4fd739a968b99e1e5602434d829d6fdc36e1e1941e8188ef674b18e285dcdf"
+  },
+  {
+    "path": "README.md",
+    "bytes": 6195,
+    "sha256": "a4dd38a16a8eb4e84366de3336af4c1c516ac36ddaf368f40d7dfb5b87d61730"
+  },
+  {
+    "path": "website/app.js",
+    "bytes": 6595,
+    "sha256": "2cf3283f5f245baa6ff5faa873041e429746a845a2a79d1018814300b77926f9"
+  },
+  {
+    "path": "website/assets/syntra-icon.png",
+    "bytes": 61035,
+    "sha256": "c8584f7c17f50eb76415fc399d3889bbeaa3b0d6004d1a18e34aae34c957e51b"
+  },
+  {
+    "path": "website/assets/syntra-logo.png",
+    "bytes": 1211139,
+    "sha256": "1dc69cf19c5f5545e33c5e99f0df2da7f164ed9327448ba2381e6f7fe236c4b8"
+  },
+  {
+    "path": "website/assets/syntra-mark.png",
+    "bytes": 569524,
+    "sha256": "7299d63d44a9ea6d626655334a9b9e8f92ce80b2bd28ae5ef343212e521d4c9a"
+  },
+  {
+    "path": "website/index.html",
+    "bytes": 12031,
+    "sha256": "57ec254d3e7c60111d53727290aa7616e81a2465bba8aaac3ed937a0c18ef47c"
+  },
+  {
+    "path": "website/style.css",
+    "bytes": 20466,
+    "sha256": "0fe8a7e70c170b8ba89a29999c4d4f569bc8d46b3529245f0992b6e08fadfe4e"
+  }
+]
