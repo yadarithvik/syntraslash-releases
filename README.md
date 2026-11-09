@@ -88,7 +88,7 @@ From the repository root, run:
 python -m http.server 8000 --directory website --bind 127.0.0.1
 ```
 
-Open `http://127.0.0.1:8000`. No frontend build step is required. The download button continues to use the current v1.2.0 installer URL.
+Open `http://127.0.0.1:8000`. No frontend build step is required. The download button links to the current v1.3.0 installer URL.
 
 For a manual Cloudflare Pages upload, use the **contents of `website/`** as the upload root so `index.html` is at the root. The published address remains [syntraslash.pages.dev](https://syntraslash.pages.dev/).
 
